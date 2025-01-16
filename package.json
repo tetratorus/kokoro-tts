@@ -1,0 +1,28 @@
+{
+  "name": "kokoro-tts",
+  "version": "1.0.0",
+  "description": "Command-line text-to-speech tool using Kokoro TTS model",
+  "main": "src/kokoro.js",
+  "bin": {
+    "kokoro-tts": "src/index.js"
+  },
+  "scripts": {
+    "test": "kokoro-tts \"Hello world\" -o test.wav",
+    "postinstall": "node scripts/download-models.js"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE",
+    "scripts/"
+  ],
+  "keywords": ["tts", "text-to-speech", "kokoro", "onnx", "cli"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "numpy-parser": "^1.2.3",
+    "onnxruntime-node": "^1.20.1",
+    "phonemizer": "^1.2.0",
+    "wav": "^1.0.2"
+  }
+}
