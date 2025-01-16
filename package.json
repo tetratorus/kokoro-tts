@@ -14,7 +14,8 @@
     "src/",
     "README.md",
     "LICENSE",
-    "scripts/"
+    "scripts/",
+    "static/"
   ],
   "keywords": ["tts", "text-to-speech", "kokoro", "onnx", "cli"],
   "author": "",

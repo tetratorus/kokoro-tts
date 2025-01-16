@@ -61,28 +61,32 @@ class KokoroTTS {
             console.log('Tokens:', fullTokens);
         }
 
-        // Get style vector for our sequence length
-        const seqIdx = fullTokens.length - 1; // 0-based index
-        const styleVector = this.voicepack.data.slice(seqIdx * 256, (seqIdx + 1) * 256);
-        const speedTensor = new Float32Array([speed]);
+        // Run inference in chunks to avoid stack overflow
+        const chunkSize = 200;  // Process 200 tokens at a time
+        let output = [];
 
-        // Create ONNX tensors
-        const feeds = {
-            'tokens': new ort.Tensor('int64', fullTokens, [1, fullTokens.length]),
-            'style': new ort.Tensor('float32', styleVector, [1, 256]),
-            'speed': new ort.Tensor('float32', speedTensor, [1])
-        };
+        for (let i = 0; i < fullTokens.length; i += chunkSize) {
+            const endIdx = Math.min(i + chunkSize, fullTokens.length);
+            const chunkTokens = fullTokens.slice(i, endIdx);
 
-        if (process.stdout.isTTY) {
-            console.log('Running inference...');
-        }
-        const results = await this.session.run(feeds);
-        if (process.stdout.isTTY) {
-            console.log('Output shape:', results.audio.dims);
+            const feeds = {
+                'tokens': new ort.Tensor('int64', chunkTokens, [1, chunkTokens.length]),
+                'style': new ort.Tensor('float32', this.voicepack.data.slice((fullTokens.length - 1) * 256, fullTokens.length * 256), [1, 256]),
+                'speed': new ort.Tensor('float32', new Float32Array([speed]), [1])
+            };
+
+            if (process.stdout.isTTY) {
+                console.log(`Processing chunk ${i} to ${endIdx} of ${fullTokens.length}`);
+            }
+
+            const outputData = await this.session.run(feeds);
+            const chunkOutput = outputData['audio'].data;
+
+            output.push(...chunkOutput);
         }
 
         // Normalize and convert to 16-bit PCM
-        const audioFloat = results.audio.data;
+        const audioFloat = new Float32Array(output);
         const maxValue = Math.max(...audioFloat.map(Math.abs));
         const audioData = new Int16Array(audioFloat.length);
         for (let i = 0; i < audioFloat.length; i++) {
@@ -103,14 +107,88 @@ class KokoroTTS {
         }
     }
 
-    async generate(text, lang = 'en-us', speed = 1.0) {
-        const { sampleRate, audioData } = await this.generateSpeech(text, lang, speed);
+    async generate(text, { speed = 1.0 } = {}) {
+        // Convert text to phonemes
+        const { phonemes, tokens } = await textToTokens(text);
+
+        if (process.stdout.isTTY) {
+            console.log('Phonemes:', phonemes);
+            console.log('Tokens:', tokens);
+        }
+
+        // Add start/end tokens
+        const fullTokens = [BigInt(0), ...tokens, BigInt(0)];
+
+        if (process.stdout.isTTY) {
+            console.log('Tokens:', fullTokens);
+        }
+
+        // Run inference in chunks to avoid stack overflow
+        const chunkSize = 100;  // Process 100 tokens at a time
+        let totalAudioLength = 0;
+        const audioChunks = [];
+
+        for (let i = 0; i < fullTokens.length; i += chunkSize) {
+            const endIdx = Math.min(i + chunkSize, fullTokens.length);
+            const chunkTokens = fullTokens.slice(i, endIdx);
+
+            const feeds = {
+                'tokens': new ort.Tensor('int64', chunkTokens, [1, chunkTokens.length]),
+                'style': new ort.Tensor('float32', this.voicepack.data.slice((fullTokens.length - 1) * 256, fullTokens.length * 256), [1, 256]),
+                'speed': new ort.Tensor('float32', new Float32Array([speed]), [1])
+            };
+
+            if (process.stdout.isTTY) {
+                console.log(`Processing chunk ${i} to ${endIdx} of ${fullTokens.length}`);
+            }
+
+            const outputData = await this.session.run(feeds);
+
+            // Process audio data in smaller chunks to avoid stack overflow
+            const audioChunk = outputData['audio'].data;
+
+            // Find max value without using map
+            let maxValue = 0;
+            for (let j = 0; j < audioChunk.length; j++) {
+                const absValue = Math.abs(audioChunk[j]);
+                if (absValue > maxValue) {
+                    maxValue = absValue;
+                }
+            }
+
+            const scale = Math.min(32767 / maxValue, 1);
+
+            // Convert to 16-bit PCM in chunks
+            const pcmChunk = new Int16Array(audioChunk.length);
+            for (let j = 0; j < audioChunk.length; j += 1000) {
+                const end = Math.min(j + 1000, audioChunk.length);
+                for (let k = j; k < end; k++) {
+                    pcmChunk[k] = Math.floor(audioChunk[k] * scale * 32767);
+                }
+            }
+
+            // Trim off the last 220 samples (10ms at 22050Hz) if this isn't the last chunk
+            const trimmedChunk = i + chunkSize < fullTokens.length ?
+                pcmChunk.slice(0, pcmChunk.length - 4000) :
+                pcmChunk;
+
+            audioChunks.push(trimmedChunk);
+            totalAudioLength += trimmedChunk.length;
+        }
+
+        // Combine all audio chunks
+        const audioData = new Int16Array(totalAudioLength);
+        let offset = 0;
+        for (const chunk of audioChunks) {
+            audioData.set(chunk, offset);
+            offset += chunk.length;
+        }
 
         // Create WAV buffer in memory
         const chunks = [];
         const writer = new wav.Writer({
             channels: 1,
-            sampleRate: sampleRate,
+            sampleRate: 22050,
             bitDepth: 16
         });
 

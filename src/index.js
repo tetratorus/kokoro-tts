@@ -46,7 +46,7 @@ Examples:
             lang: 'en-us',
             speed: 1.0,
             model: path.join(__dirname, '..', 'models', 'kokoro-v0_19.onnx'),
-            voice: path.join(__dirname, '..', 'models', 'voices', 'af.npy')
+            voice: path.join(__dirname, '..', 'static', 'af.npy')
         };
 
         // Parse arguments
@@ -87,7 +87,7 @@ Examples:
 
         // Generate speech
         const wavBuffer = await tts.generate(text, options.lang, options.speed);
-        
+
         if (options.pipe) {
             // Use process.stdout.write and ignore errors (handled by the error handler above)
             process.stdout.write(wavBuffer);

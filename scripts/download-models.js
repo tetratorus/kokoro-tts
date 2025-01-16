@@ -5,9 +5,9 @@ const fs = require('fs');
 const path = require('path');
 
 const MODELS_DIR = path.join(__dirname, '..', 'models');
+const BASE_URL = 'https://github.com/tetratorus/kokoro-tts/releases/download/v1';
 const MODELS = {
-    'kokoro-v0_19.onnx': 'YOUR_MODEL_URL_HERE',
-    'af.npy': 'YOUR_NPY_URL_HERE'
+    'kokoro-v0_19.onnx': `${BASE_URL}/kokoro-v0_19.onnx`
 };
 
 // Create models directory if it doesn't exist
